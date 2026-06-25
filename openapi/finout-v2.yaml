@@ -1,0 +1,1403 @@
+openapi: 3.0.3
+info:
+  title: Finout API V2
+  description: |
+    Finout API V2 provides programmatic access to Virtual Tags, Virtual Tag Versions,
+    Virtual Tag Metadata, Query Language (keys & values), and Cost & Usage data.
+
+    ## Authentication
+    All requests require both `x-finout-client-id` and `x-finout-secret-key` headers,
+    generated via the Finout API token creation process.
+
+    ## Rate Limits
+    Rate limits apply per account, per route. See individual endpoint descriptions for limits.
+
+    ## Virtual Tag Version Behavior
+    POST and PUT operations on Virtual Tags always create a new version. The `setAsLive` query
+    parameter controls whether that version is immediately published (default: true). Up to 100
+    versions are retained per Virtual Tag (1-year retention); the oldest non-live version is
+    deleted automatically when the limit is reached.
+
+    ## Cost & Usage Query Workflow
+    1. **Submit** — `POST /v2/data/cost-usage/generate-query` → receive a `queryId`.
+    2. **Poll** — `GET /v2/data/cost-usage/{queryId}/status` every ~5 s until `status` is `completed`.
+    3. **Retrieve** — `GET /v2/data/cost-usage/{queryId}/results` with cursor pagination.
+    Results are retained for 24 hours; a new submission is required after expiry.
+  version: 2.0.0-beta
+  contact:
+    url: https://docs.finout.io
+
+servers:
+  - url: https://app.finout.io
+    description: Finout Production API
+
+security:
+  - ClientIdAuth: []
+    SecretKeyAuth: []
+
+tags:
+  - name: virtual-tags-v2
+    description: |
+      Virtual Tags API V2 (Beta) — create, read, update, and delete Virtual Tag configurations.
+  - name: virtual-tag-versions-v2
+    description: |
+      Virtual Tag Versions API V2 (Beta) — read-only access to Virtual Tag version history.
+  - name: virtual-tag-metadata-v2
+    description: |
+      Virtual Tag Metadata API V2 (Beta) — manage metadata associated with Virtual Tag values.
+  - name: query-language-v2
+    description: |
+      Query Language API V2 — retrieve available filter keys and their valid values.
+      Use these to build filter objects for Virtual Tag rules and Cost & Usage queries.
+  - name: cost-usage-v2
+    description: |
+      Cost & Usage API V2 — submit asynchronous cost and usage queries, poll their status,
+      and retrieve paginated results. Maximum date range per query is 60 days.
+
+paths:
+  /v2/virtual-tags:
+    get:
+      tags:
+        - virtual-tags-v2
+      summary: List Virtual Tags
+      description: "Retrieves all Virtual Tag configurations. Rate limit: 50 req/min per account."
+      operationId: listVirtualTags
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualTagListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      tags:
+        - virtual-tags-v2
+      summary: Create a Virtual Tag
+      description: |
+        Creates a new Virtual Tag and a corresponding first version.
+        Rate limit: 50 req/min per account.
+      operationId: createVirtualTag
+      parameters:
+        - $ref: "#/components/parameters/SetAsLive"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VirtualTagRequest"
+      responses:
+        "200":
+          description: Virtual Tag created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualTagResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v2/virtual-tags/{id}:
+    get:
+      tags:
+        - virtual-tags-v2
+      summary: Get a Virtual Tag
+      description: "Retrieves a specific Virtual Tag by ID. Rate limit: 100 req/min per account."
+      operationId: getVirtualTag
+      parameters:
+        - $ref: "#/components/parameters/VirtualTagId"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualTagResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    put:
+      tags:
+        - virtual-tags-v2
+      summary: Update a Virtual Tag
+      description: |
+        Replaces an existing Virtual Tag (full replacement) and creates a new version.
+        Rate limit: 100 req/min per account.
+      operationId: updateVirtualTag
+      parameters:
+        - $ref: "#/components/parameters/VirtualTagId"
+        - $ref: "#/components/parameters/SetAsLive"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VirtualTagRequest"
+      responses:
+        "200":
+          description: Virtual Tag updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualTagResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      tags:
+        - virtual-tags-v2
+      summary: Delete a Virtual Tag
+      description: |
+        Deletes a Virtual Tag and all its version history. This action cannot be undone.
+        Rate limit: 100 req/min per account.
+      operationId: deleteVirtualTag
+      parameters:
+        - $ref: "#/components/parameters/VirtualTagId"
+      responses:
+        "200":
+          description: Virtual Tag deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualTagDeleteResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v2/virtual-tags/{id}/versions:
+    get:
+      tags:
+        - virtual-tag-versions-v2
+      summary: List Virtual Tag Versions
+      description: |
+        Retrieves paginated version history for a specific Virtual Tag.
+        Rate limit: 50 req/min per account.
+      operationId: listVirtualTagVersions
+      parameters:
+        - $ref: "#/components/parameters/VirtualTagId"
+        - name: from
+          in: query
+          description: Return versions created on or after this Unix timestamp (milliseconds).
+          schema:
+            type: integer
+            format: int64
+        - name: to
+          in: query
+          description: Return versions created on or before this Unix timestamp (milliseconds).
+          schema:
+            type: integer
+            format: int64
+        - name: pageSize
+          in: query
+          description: Number of results per page. Default 50, max 100.
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: cursor
+          in: query
+          description: Pagination cursor for the next page of results.
+          schema:
+            type: string
+        - name: sortDirection
+          in: query
+          description: Sort direction for results.
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualTagVersionListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+
+  /v2/virtual-tags/{vtagId}/versions/{id}:
+    get:
+      tags:
+        - virtual-tag-versions-v2
+      summary: Get a Virtual Tag Version
+      description: |
+        Retrieves a specific version of a Virtual Tag including full rule and default value data.
+        Rate limit: 100 req/min per account.
+      operationId: getVirtualTagVersion
+      parameters:
+        - name: vtagId
+          in: path
+          required: true
+          description: Virtual Tag identifier.
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          description: Version identifier.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualTagVersionDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+
+  /v2/virtual-tags/{id}/metadata:
+    get:
+      tags:
+        - virtual-tag-metadata-v2
+      summary: Get Virtual Tag Metadata
+      description: |
+        Retrieves metadata for all values of a specific Virtual Tag.
+        Returns an empty metadata map if no metadata has been set.
+        Rate limit: 100 req/min per account.
+      operationId: getVirtualTagMetadata
+      parameters:
+        - $ref: "#/components/parameters/VirtualTagId"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualTagMetadataResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+    put:
+      tags:
+        - virtual-tag-metadata-v2
+      summary: Update Virtual Tag Metadata
+      description: |
+        Updates metadata for Virtual Tag values. By default (mergeValuesAndMetadata: false),
+        replaces all existing metadata for each specified value. Set mergeValuesAndMetadata: true
+        on individual values to merge instead of replace. Virtual tag value keys cannot contain dots.
+        Rate limit: 100 req/min per account.
+      operationId: updateVirtualTagMetadata
+      parameters:
+        - $ref: "#/components/parameters/VirtualTagId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VirtualTagMetadataRequest"
+      responses:
+        "200":
+          description: Metadata updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualTagMetadataUpdateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+  /v2/query-language/keys:
+    get:
+      tags:
+        - query-language-v2
+      summary: List Query Language Keys
+      description: |
+        Retrieves all available keys and their metadata for use in filter objects and
+        cost/usage query dimensions. Rate limit: 50 req/min per account.
+      operationId: listQueryLanguageKeys
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryLanguageKeysResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v2/query-language/values/{costCenter}/{key}:
+    get:
+      tags:
+        - query-language-v2
+      summary: List Values for a Key
+      description: |
+        Retrieves valid values for a specific key within a cost center.
+        Specify `type` when the key supports multiple types.
+        Rate limit: 50 req/min per account.
+      operationId: listQueryLanguageValues
+      parameters:
+        - name: costCenter
+          in: path
+          required: true
+          description: Cost center identifier (e.g. AWS, GCP, Azure).
+          schema:
+            type: string
+        - name: key
+          in: path
+          required: true
+          description: Key identifier. Obtain valid keys from `listQueryLanguageKeys`.
+          schema:
+            type: string
+        - name: type
+          in: query
+          description: Key type — required when the key supports multiple types.
+          schema:
+            $ref: "#/components/schemas/KeyType"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryLanguageValuesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v2/data/cost-usage/generate-query:
+    post:
+      tags:
+        - cost-usage-v2
+      summary: Submit a Cost & Usage Query
+      description: |
+        Submits an asynchronous cost or usage query and returns a `queryId` for polling.
+        The date range must not exceed 60 days. Maximum 3 unique Virtual Tags across
+        dimensions and filters combined. Rate limit: 50 req/min, 10,000 req/day per account.
+      operationId: generateCostUsageQuery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateQueryRequest"
+      responses:
+        "200":
+          description: Query submitted successfully. Use the returned `queryId` to poll status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateQueryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v2/data/cost-usage/{queryId}/status:
+    get:
+      tags:
+        - cost-usage-v2
+      summary: Get Query Status
+      description: |
+        Polls the execution status of a previously submitted cost/usage query.
+        Poll every ~5 seconds until `status` is `completed` or `failed`.
+        Rate limit: 50 req/min per account.
+      operationId: getCostUsageQueryStatus
+      parameters:
+        - $ref: "#/components/parameters/QueryId"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryStatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /v2/data/cost-usage/{queryId}/results:
+    get:
+      tags:
+        - cost-usage-v2
+      summary: Get Query Results
+      description: |
+        Retrieves paginated results for a completed query. Call only after status is `completed`.
+        Results expire 24 hours after query completion; a new query must be submitted after expiry.
+        Rate limit: 50 req/min per account.
+      operationId: getCostUsageQueryResults
+      parameters:
+        - $ref: "#/components/parameters/QueryId"
+        - name: pageSize
+          in: query
+          description: Number of rows per page. Default 100, max 10,000.
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 10000
+        - name: cursor
+          in: query
+          description: Pagination cursor from the previous response's `nextCursor` field.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful response with result rows.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResultsResponse"
+        "202":
+          $ref: "#/components/responses/QueryStillProcessing"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "410":
+          $ref: "#/components/responses/ResultsExpired"
+        "424":
+          $ref: "#/components/responses/QueryFailed"
+        "429":
+          $ref: "#/components/responses/RateLimitExceeded"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  securitySchemes:
+    ClientIdAuth:
+      type: apiKey
+      in: header
+      name: x-finout-client-id
+      description: Finout client ID obtained from the API token creation process.
+    SecretKeyAuth:
+      type: apiKey
+      in: header
+      name: x-finout-secret-key
+      description: Finout secret key obtained from the API token creation process.
+
+  parameters:
+    VirtualTagId:
+      name: id
+      in: path
+      required: true
+      description: Virtual Tag identifier.
+      schema:
+        type: string
+
+    SetAsLive:
+      name: setAsLive
+      in: query
+      required: false
+      description: |
+        Controls version publication. If true (default), the new version becomes Live immediately
+        and affects all users. If false, the version is staged without affecting users.
+      schema:
+        type: boolean
+        default: true
+
+    QueryId:
+      name: queryId
+      in: path
+      required: true
+      description: Query identifier returned by the generate-query endpoint.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Bad request — malformed request or missing/invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Unauthorized:
+      description: Unauthorized — invalid or missing x-finout-client-id / x-finout-secret-key headers.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Forbidden:
+      description: Forbidden — the authenticated account lacks permission to access this resource (check Virtual Tag write ACL).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFound:
+      description: Not found — the requested Virtual Tag or version ID does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    UnprocessableEntity:
+      description: Unprocessable entity — valid JSON but business logic validation failed (e.g. invalid rule/filter composition).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    RateLimitExceeded:
+      description: Rate limit exceeded. Reduce request frequency and inspect ratelimit response headers.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    InternalServerError:
+      description: Internal server error. Retry the request; contact support if the issue persists.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ServiceUnavailable:
+      description: Service temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    GatewayTimeout:
+      description: Gateway timeout — the upstream service did not respond in time.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    QueryStillProcessing:
+      description: |
+        Query is still queued or running. Continue polling the status endpoint.
+        Error codes: `QUERY_QUEUED` or `QUERY_RUNNING`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    QueryFailed:
+      description: |
+        The query execution failed. Submit a new query.
+        Error code: `QUERY_FAILED`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ResultsExpired:
+      description: |
+        Query results have expired (24-hour retention window exceeded). Submit a new query.
+        Error code: `RESULTS_EXPIRED`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    # ─── Shared ──────────────────────────────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      description: Standard error response envelope.
+      properties:
+        requestId:
+          type: string
+          description: Unique identifier for the request.
+        error:
+          type: string
+          description: Machine-readable error code.
+        message:
+          type: string
+          description: Human-readable error description.
+
+    MegaBillKey:
+      type: object
+      description: |
+        Reference to a MegaBill key, used as a dynamic value source for Virtual Tag rules
+        and default values instead of a static string.
+      required:
+        - key
+        - costCenter
+      properties:
+        key:
+          type: string
+          format: uuid
+          description: MegaBill key identifier.
+        costCenter:
+          type: string
+          description: Cost center identifier.
+        type:
+          type: string
+          description: Type discriminator (e.g. "virtual_tag"). Present in responses only.
+
+    TagValue:
+      description: |
+        A Virtual Tag value — either a static string or a MegaBill key reference.
+        Use a plain string for static assignments; use a MegaBillKey object to
+        reference a dynamic MegaBill key.
+      oneOf:
+        - type: string
+          description: Static tag value.
+        - $ref: "#/components/schemas/MegaBillKey"
+
+    KeyType:
+      type: string
+      description: Identifies the category/type of a cost dimension key.
+      enum:
+        - tag
+        - billing_dimension
+        - resource
+        - billing_enrichment
+        - virtual_tag
+        - custom_cost
+        - kubernetes_resource
+        - k8s_pod_label
+        - k8s_node_label
+        - k8s_namespace
+
+    FilterOperator:
+      type: string
+      description: Comparison operator for a filter condition.
+      enum:
+        - oneOf
+        - notOneOf
+        - is
+        - notIs
+        - contains
+        - notContains
+        - exists
+        - notExists
+
+    SimpleFilter:
+      type: object
+      description: |
+        A single filter condition matching cost rows by a key/value comparison.
+        `displayName` is read-only in responses; omit it from request bodies.
+        The `value` field is not required for `exists` and `notExists` operators.
+      required:
+        - costCenter
+        - key
+        - type
+        - operator
+      properties:
+        costCenter:
+          type: string
+          description: Cost center the key belongs to (e.g. AWS, GCP, Azure, Kubernetes).
+        key:
+          type: string
+          description: Key identifier to filter on. Obtain valid keys from the Query Language API.
+        type:
+          $ref: "#/components/schemas/KeyType"
+        operator:
+          $ref: "#/components/schemas/FilterOperator"
+        value:
+          type: array
+          description: Values to match against. Not required for `exists` / `notExists` operators.
+          items: {}
+        displayName:
+          type: string
+          readOnly: true
+          description: Human-readable label for the key. Read-only; omit from requests.
+
+    AndFilter:
+      type: object
+      description: Logical AND — all nested conditions must match.
+      required:
+        - AND
+      properties:
+        AND:
+          type: array
+          description: Conditions that must all match.
+          items:
+            $ref: "#/components/schemas/FilterCondition"
+
+    OrFilter:
+      type: object
+      description: Logical OR — at least one nested condition must match.
+      required:
+        - OR
+      properties:
+        OR:
+          type: array
+          description: Conditions of which at least one must match.
+          items:
+            $ref: "#/components/schemas/FilterCondition"
+
+    FilterCondition:
+      description: |
+        A filter expression — either a simple field comparison or a logical AND/OR grouping
+        of nested conditions. Supports arbitrary nesting depth.
+      oneOf:
+        - $ref: "#/components/schemas/SimpleFilter"
+        - $ref: "#/components/schemas/AndFilter"
+        - $ref: "#/components/schemas/OrFilter"
+
+    RuleTimeframe:
+      type: object
+      description: |
+        Date range during which a rule is active. Omit the `to` field for an open-ended
+        (ongoing) timeframe.
+      required:
+        - from
+      properties:
+        from:
+          type: integer
+          format: int64
+          description: Start of the timeframe as a Unix timestamp in milliseconds.
+        to:
+          type: integer
+          format: int64
+          description: End of the timeframe as a Unix timestamp in milliseconds. Omit for open-ended.
+
+    Rule:
+      type: object
+      description: |
+        A single rule that assigns a Virtual Tag value to cost rows matching its filters.
+        Rules are evaluated in array order (top-to-bottom); arrange from most specific to most general.
+      required:
+        - to
+        - filters
+      properties:
+        to:
+          $ref: "#/components/schemas/TagValue"
+        filters:
+          $ref: "#/components/schemas/FilterCondition"
+        timeframe:
+          $ref: "#/components/schemas/RuleTimeframe"
+
+    ACL:
+      type: object
+      description: Access control configuration for a Virtual Tag.
+      properties:
+        read:
+          description: Read access configuration. Defaults to public (all users).
+        write:
+          description: Write access configuration. Defaults to the account-level default.
+
+    VersionMetadata:
+      type: object
+      description: Metadata to associate with a new Virtual Tag version.
+      properties:
+        changeDescription:
+          type: string
+          description: Human-readable notes describing what changed in this version.
+
+    Pagination:
+      type: object
+      description: Pagination envelope for list responses.
+      properties:
+        nextCursor:
+          type: string
+          nullable: true
+          description: Opaque cursor for the next page. Null when there are no more results.
+        hasMore:
+          type: boolean
+          description: True when additional pages of results exist.
+
+    # ─── Virtual Tags ─────────────────────────────────────────────────────────
+
+    VirtualTag:
+      type: object
+      description: A fully-resolved Virtual Tag configuration.
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the Virtual Tag.
+        name:
+          type: string
+          description: Name/label of the Virtual Tag.
+        defaultValue:
+          $ref: "#/components/schemas/TagValue"
+        rules:
+          type: array
+          description: |
+            Ordered list of matching rules, evaluated top-to-bottom.
+            Maximum 1,000 rules per Virtual Tag.
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/Rule"
+        acl:
+          $ref: "#/components/schemas/ACL"
+        createdBy:
+          type: string
+          format: email
+          description: Email of the user who created this Virtual Tag.
+        updatedBy:
+          type: string
+          format: email
+          description: Email of the user who last updated this Virtual Tag.
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp (ISO-8601).
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last-updated timestamp (ISO-8601).
+
+    VirtualTagRequest:
+      type: object
+      description: Request body for creating or fully replacing a Virtual Tag.
+      required:
+        - name
+        - defaultValue
+        - rules
+      properties:
+        name:
+          type: string
+          description: Name/label of the Virtual Tag.
+        defaultValue:
+          $ref: "#/components/schemas/TagValue"
+        rules:
+          type: array
+          description: |
+            Ordered list of rules, evaluated top-to-bottom.
+            Maximum 1,000 rules per Virtual Tag.
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/Rule"
+        versionMetadata:
+          $ref: "#/components/schemas/VersionMetadata"
+
+    VirtualTagListResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Unique request identifier.
+        data:
+          type: object
+          properties:
+            virtualTags:
+              type: array
+              items:
+                $ref: "#/components/schemas/VirtualTag"
+
+    VirtualTagResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Unique request identifier.
+        data:
+          $ref: "#/components/schemas/VirtualTag"
+
+    VirtualTagDeleteResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Unique request identifier.
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+              description: ID of the deleted Virtual Tag.
+            name:
+              type: string
+              description: Name of the deleted Virtual Tag.
+
+    # ─── Virtual Tag Versions ─────────────────────────────────────────────────
+
+    VirtualTagVersion:
+      type: object
+      description: Summary metadata for a single Virtual Tag version.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique version identifier.
+        createdBy:
+          type: string
+          format: email
+          description: Email of the user who created this version.
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp (ISO-8601).
+        isLive:
+          type: boolean
+          description: True if this is the currently active (live) version. Only one version is live at a time.
+        changeDescription:
+          type: string
+          description: Human-readable description of changes introduced in this version.
+
+    VirtualTagVersionData:
+      type: object
+      description: Full configuration data stored in a specific Virtual Tag version.
+      properties:
+        rules:
+          type: array
+          description: Rules as they existed in this version.
+          items:
+            $ref: "#/components/schemas/Rule"
+        defaultValue:
+          $ref: "#/components/schemas/TagValue"
+
+    VirtualTagVersionDetail:
+      description: A Virtual Tag version with full configuration data.
+      allOf:
+        - $ref: "#/components/schemas/VirtualTagVersion"
+        - type: object
+          properties:
+            versionData:
+              $ref: "#/components/schemas/VirtualTagVersionData"
+
+    VirtualTagVersionListResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier.
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/VirtualTagVersion"
+
+    VirtualTagVersionDetailResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier.
+        data:
+          $ref: "#/components/schemas/VirtualTagVersionDetail"
+
+    # ─── Virtual Tag Metadata ─────────────────────────────────────────────────
+
+    MetadataValue:
+      type: object
+      description: Metadata associated with a single Virtual Tag value.
+      properties:
+        groups:
+          type: array
+          description: IDs of groups associated with this value.
+          items:
+            type: string
+            format: uuid
+        customMetadata:
+          type: object
+          description: Arbitrary key-value pairs of custom metadata.
+          additionalProperties:
+            type: string
+        endpoints:
+          type: array
+          description: IDs of endpoints associated with this value.
+          items:
+            type: string
+            format: uuid
+
+    MetadataRequestValue:
+      description: Metadata for a single Virtual Tag value in an update request.
+      allOf:
+        - $ref: "#/components/schemas/MetadataValue"
+        - type: object
+          properties:
+            mergeValuesAndMetadata:
+              type: boolean
+              default: false
+              description: |
+                Controls merge behavior for this value. If false (default), all existing metadata
+                for this value is replaced by the provided payload. If true, the payload is merged
+                with existing metadata.
+
+    VirtualTagMetadataMap:
+      type: object
+      description: |
+        Map of Virtual Tag values to their metadata. Keys are the Virtual Tag value strings.
+        Returns an empty object if no metadata has been configured.
+      additionalProperties:
+        $ref: "#/components/schemas/MetadataValue"
+
+    VirtualTagMetadataRequest:
+      type: object
+      description: |
+        Map of Virtual Tag values to metadata update payloads. Keys are Virtual Tag value strings
+        and must not contain dots.
+      additionalProperties:
+        $ref: "#/components/schemas/MetadataRequestValue"
+
+    VirtualTagMetadataResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier.
+        data:
+          type: object
+          properties:
+            metadata:
+              $ref: "#/components/schemas/VirtualTagMetadataMap"
+
+    VirtualTagMetadataUpdateResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier.
+        data:
+          type: object
+          properties:
+            metadata:
+              $ref: "#/components/schemas/VirtualTagMetadataMap"
+            virtualTagId:
+              type: string
+              format: uuid
+              description: ID of the Virtual Tag whose metadata was updated.
+
+    # ─── Query Language ───────────────────────────────────────────────────────
+
+    QueryLanguageKey:
+      type: object
+      description: A queryable key that can be used as a filter dimension or cost/usage dimension.
+      properties:
+        costCenter:
+          type: string
+          description: Cost center this key belongs to (e.g. AWS, GCP, Azure).
+        key:
+          type: string
+          description: Key identifier used in filters and dimensions.
+        displayName:
+          type: string
+          description: Human-readable label shown in the Finout UI.
+        types:
+          type: array
+          description: One or more key types supported by this key.
+          items:
+            $ref: "#/components/schemas/KeyType"
+
+    QueryLanguageKeysResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Unique request identifier.
+        data:
+          type: object
+          properties:
+            keys:
+              type: array
+              items:
+                $ref: "#/components/schemas/QueryLanguageKey"
+
+    QueryLanguageValuesResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Unique request identifier.
+        data:
+          type: object
+          properties:
+            values:
+              type: array
+              description: Valid values for the requested key.
+              items:
+                type: string
+
+    # ─── Cost & Usage ─────────────────────────────────────────────────────────
+
+    DateRange:
+      type: object
+      description: Time range for a cost/usage query. Maximum span is 60 days.
+      required:
+        - unixTimeMillisecondsStart
+        - unixTimeMillisecondsEnd
+      properties:
+        unixTimeMillisecondsStart:
+          type: integer
+          format: int64
+          description: Range start as Unix timestamp in milliseconds.
+        unixTimeMillisecondsEnd:
+          type: integer
+          format: int64
+          description: Range end as Unix timestamp in milliseconds. Must be within 60 days of start.
+
+    TimeInterval:
+      type: object
+      description: Aggregation interval for result rows.
+      required:
+        - interval
+      properties:
+        interval:
+          type: string
+          description: Granularity of each result row.
+          enum: [day, week, month]
+        sortDirection:
+          type: string
+          description: Sort direction for time intervals in results.
+          enum: [ascending, descending]
+
+    MeasurementType:
+      type: string
+      description: Cost or usage metric to measure.
+      enum:
+        - blendedCost
+        - unblendedCost
+        - netUnblendedCost
+        - amortizedCost
+        - netAmortizedCost
+        - listCost
+        - usageAmount
+        - normalizedUsageAmount
+
+    MeasurementOperator:
+      type: string
+      description: Aggregation function applied to the measurement.
+      enum: [sum, avg, min, max]
+
+    Measurement:
+      type: object
+      description: A cost or usage metric to include in query results.
+      required:
+        - type
+      properties:
+        type:
+          $ref: "#/components/schemas/MeasurementType"
+        operator:
+          $ref: "#/components/schemas/MeasurementOperator"
+        sortDirection:
+          type: string
+          description: Sort direction for this measurement in results.
+          enum: [ascending, descending]
+
+    Dimension:
+      type: object
+      description: A grouping dimension to break down results by.
+      required:
+        - costCenter
+        - key
+        - type
+      properties:
+        costCenter:
+          type: string
+          description: Cost center the key belongs to.
+        key:
+          type: string
+          description: Key identifier for the dimension.
+        type:
+          $ref: "#/components/schemas/KeyType"
+        sortDirection:
+          type: string
+          description: Sort direction for this dimension in results.
+          enum: [ascending, descending]
+
+    GenerateQueryRequest:
+      type: object
+      description: |
+        Request body for submitting a cost/usage query. Constraints:
+        - `measurements`: max 5 items.
+        - `dimensions`: max 20 items.
+        - `filters`: max 30 leaf conditions.
+        - `rowLimit`: max 100,000 (default 1,000).
+        - `date` range: max 60 days.
+        - Max 3 unique Virtual Tags across dimensions and filters combined.
+      required:
+        - date
+        - timeInterval
+        - measurements
+      properties:
+        date:
+          $ref: "#/components/schemas/DateRange"
+        timeInterval:
+          $ref: "#/components/schemas/TimeInterval"
+        measurements:
+          type: array
+          description: Metrics to retrieve. Maximum 5 items.
+          minItems: 1
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/Measurement"
+        dimensions:
+          type: array
+          description: Grouping dimensions for result rows. Maximum 20 items.
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/Dimension"
+        filters:
+          $ref: "#/components/schemas/FilterCondition"
+        rowLimit:
+          type: integer
+          description: Maximum number of result rows to return. Default 1,000, max 100,000.
+          default: 1000
+          minimum: 1
+          maximum: 100000
+
+    GenerateQueryResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Unique request identifier.
+        data:
+          type: object
+          required:
+            - queryId
+          properties:
+            queryId:
+              type: string
+              description: Opaque identifier for the submitted query. Use to poll status and fetch results.
+
+    QueryStatus:
+      type: string
+      description: Execution status of a submitted query.
+      enum: [queued, running, completed, failed, expired]
+
+    QueryStatusResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Unique request identifier.
+        data:
+          type: object
+          properties:
+            status:
+              $ref: "#/components/schemas/QueryStatus"
+            completedAt:
+              type: string
+              format: date-time
+              description: Timestamp when the query finished. Present only when status is `completed`.
+            expiredAt:
+              type: string
+              format: date-time
+              description: Timestamp when results will expire. Present only when status is `completed`.
+            totalRows:
+              type: integer
+              description: Total number of result rows available. Present only when status is `completed`.
+
+    MeasurementResult:
+      type: object
+      description: Aggregated value for a single measurement in a result row.
+      properties:
+        amount:
+          type: number
+          format: double
+          description: Numeric value of the measurement.
+        unit:
+          type: string
+          description: Unit of measurement. Present for usage-type measurements (e.g. "GB-hours").
+
+    QueryResultsPagination:
+      type: object
+      description: Pagination metadata for query result responses.
+      properties:
+        hasMore:
+          type: boolean
+          description: True when additional pages of results exist.
+        totalRows:
+          type: integer
+          description: Total number of result rows for this query.
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page. Absent when `hasMore` is false.
+
+    QueryResultRow:
+      type: object
+      description: |
+        A single result row. Field names are dynamic and depend on the query:
+        - **Dimension fields**: `{costCenter}_{type}_{key}` → string value.
+        - **Interval field**: `day`, `week`, or `month` → ISO-8601 date string.
+        - **Measurement fields**: `{measurementType}_{operator}` → MeasurementResult object.
+      additionalProperties: true
+
+    QueryResultsResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Unique request identifier.
+        pagination:
+          $ref: "#/components/schemas/QueryResultsPagination"
+        data:
+          type: array
+          description: Result rows. See QueryResultRow for field naming conventions.
+          items:
+            $ref: "#/components/schemas/QueryResultRow"
