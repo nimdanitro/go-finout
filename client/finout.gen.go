@@ -503,7 +503,7 @@ type QueryLanguageValuesResponse struct {
 // QueryResultRow A single result row. Field names are dynamic and depend on the query:
 // - **Dimension fields**: `{costCenter}_{type}_{key}` → string value.
 // - **Interval field**: `day`, `week`, or `month` → ISO-8601 date string.
-// - **Measurement fields**: `{measurementType}_{operator}` → MeasurementResult object.
+// - **Measurement fields**: `{measurementType}_{operator}` → `{"amount": number, "unit": string}` (unit present for usage measurements only).
 type QueryResultRow map[string]interface{}
 
 // QueryResultsPagination Pagination metadata for query result responses.

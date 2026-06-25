@@ -1353,18 +1353,6 @@ components:
               type: integer
               description: Total number of result rows available. Present only when status is `completed`.
 
-    MeasurementResult:
-      type: object
-      description: Aggregated value for a single measurement in a result row.
-      properties:
-        amount:
-          type: number
-          format: double
-          description: Numeric value of the measurement.
-        unit:
-          type: string
-          description: Unit of measurement. Present for usage-type measurements (e.g. "GB-hours").
-
     QueryResultsPagination:
       type: object
       description: Pagination metadata for query result responses.
@@ -1385,7 +1373,7 @@ components:
         A single result row. Field names are dynamic and depend on the query:
         - **Dimension fields**: `{costCenter}_{type}_{key}` → string value.
         - **Interval field**: `day`, `week`, or `month` → ISO-8601 date string.
-        - **Measurement fields**: `{measurementType}_{operator}` → MeasurementResult object.
+        - **Measurement fields**: `{measurementType}_{operator}` → `{"amount": number, "unit": string}` (unit present for usage measurements only).
       additionalProperties: true
 
     QueryResultsResponse:
